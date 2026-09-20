@@ -14,6 +14,12 @@ export type TitleStep = {
   source: string;
 };
 
+export type CandidateGap = {
+  titleId: string;
+  reason: string;
+  source: string;
+};
+
 export type Candidate = {
   id: string;
   name: string;
@@ -25,8 +31,19 @@ export type Candidate = {
   tags: string[];
   sprite: string;
   spritePage: string;
+  availabilitySource: string;
+  gaps: CandidateGap[];
   maxTitles: number;
   regularTitles: number;
+};
+
+export type RedditCallout = {
+  label: string;
+  title: string;
+  summary: string;
+  items: string[];
+  note?: string;
+  source: string;
 };
 
 export const SOURCES = {
@@ -34,6 +51,8 @@ export const SOURCES = {
   ribbons: "https://bulbapedia.bulbagarden.net/wiki/List_of_Ribbons_in_the_games",
   marks: "https://bulbapedia.bulbagarden.net/wiki/Mark",
   shadow: "https://bulbapedia.bulbagarden.net/wiki/List_of_Shadow_Pok%C3%A9mon",
+  originMarks: "https://bulbapedia.bulbagarden.net/wiki/Origin_mark",
+  homeChallenges: "https://bulbapedia.bulbagarden.net/wiki/Challenge_(HOME)",
   transfer: "https://bulbapedia.bulbagarden.net/wiki/Transfer",
   championsTitles: "https://www.serebii.net/pokemonchampions/pokemontitles.shtml",
   championsRoster: "https://www.serebii.net/pokemonchampions/pokemon.shtml",
@@ -467,23 +486,155 @@ export const TITLE_STEPS: TitleStep[] = [
   },
 ];
 
-// Every finalist exists in Generation IV, so HGSS supplies a consistent pixel-art set.
+// Every candidate exists in Generation IV, so HGSS supplies one consistent pixel-art set.
 const sprite = (name: string) =>
   `https://img.pokemondb.net/sprites/heartgold-soulsilver/normal/${name}.png`;
 const spritePage = (name: string) => `https://pokemondb.net/sprites/${name}`;
+const speciesPage = (name: string) =>
+  `https://bulbapedia.bulbagarden.net/wiki/${encodeURIComponent(name.replaceAll(" ", "_"))}_(Pok%C3%A9mon)`;
+
+type CandidateInput = {
+  id: string;
+  name: string;
+  number: string;
+  generation: 1 | 2 | 3 | 4;
+  shadowBase: string;
+  originGame: "Colosseum" | "XD";
+  route: string;
+  tags: string[];
+  gaps?: CandidateGap[];
+};
+
+const noHisui = (name: string): CandidateGap => ({
+  titleId: "hisui",
+  reason: `${name} cannot enter Pokémon Legends: Arceus, so this individual cannot earn the Hisui Ribbon.`,
+  source: speciesPage(name),
+});
+const noGalar = (name: string): CandidateGap => ({
+  titleId: "galar-champion",
+  reason: `${name} cannot enter Pokémon Sword or Shield, so this individual cannot earn the Galar Champion Ribbon.`,
+  source: speciesPage(name),
+});
+const noChampions = (name: string): CandidateGap => ({
+  titleId: "champion-tiered",
+  reason: `${name} is not on Serebii's current Pokémon Champions roster.`,
+  source: SOURCES.championsRoster,
+});
+
+const makeCandidate = (input: CandidateInput): Candidate => {
+  const gaps = input.gaps ?? [];
+  const maxTitles = TITLE_STEPS.length - gaps.length;
+  const sizeAlreadyUnavailable = gaps.some((gap) => gap.titleId === "size-extreme");
+  return {
+    ...input,
+    gaps,
+    sprite: sprite(input.id),
+    spritePage: spritePage(input.id),
+    availabilitySource: speciesPage(input.name),
+    maxTitles,
+    regularTitles: maxTitles - (sizeAlreadyUnavailable ? 0 : 1),
+  };
+};
 
 export const CANDIDATES: Candidate[] = [
-  { id: "heracross", name: "Heracross", number: "#0214", generation: 2, shadowBase: "Heracross", originGame: "Colosseum", route: "Catch Heracross directly as a Shadow Pokémon; no evolution is required for this final form.", tags: ["Direct route", "No evolution"], sprite: sprite("heracross"), spritePage: spritePage("heracross"), maxTitles: 47, regularTitles: 46 },
-  { id: "snorlax", name: "Snorlax", number: "#0143", generation: 1, shadowBase: "Snorlax", originGame: "XD", route: "Catch Snorlax directly as a Shadow Pokémon in Pokémon XD: Gale of Darkness.", tags: ["Direct route", "No evolution"], sprite: sprite("snorlax"), spritePage: spritePage("snorlax"), maxTitles: 47, regularTitles: 46 },
-  { id: "ninetales", name: "Ninetales", number: "#0038", generation: 1, shadowBase: "Vulpix", originGame: "XD", route: "Start with the Shadow Vulpix from Pokémon XD and evolve that same individual.", tags: ["Evolution required"], sprite: sprite("ninetales"), spritePage: spritePage("ninetales"), maxTitles: 47, regularTitles: 46 },
-  { id: "scizor", name: "Scizor", number: "#0212", generation: 2, shadowBase: "Scyther", originGame: "XD", route: "Start with the Shadow Scyther from Pokémon XD and evolve that same individual into Scizor.", tags: ["Trade evolution"], sprite: sprite("scizor"), spritePage: spritePage("scizor"), maxTitles: 47, regularTitles: 46 },
-  { id: "rhyperior", name: "Rhyperior", number: "#0464", generation: 4, shadowBase: "Rhydon", originGame: "XD", route: "Start with the Shadow Rhydon from Pokémon XD and evolve that same individual after it reaches Generation IV.", tags: ["Gen IV final", "Trade evolution"], sprite: sprite("rhyperior"), spritePage: spritePage("rhyperior"), maxTitles: 47, regularTitles: 46 },
-  { id: "weavile", name: "Weavile", number: "#0461", generation: 4, shadowBase: "Sneasel", originGame: "Colosseum", route: "Start with the Shadow Sneasel from Pokémon Colosseum and evolve that same individual in Generation IV or later.", tags: ["Gen IV final", "Evolution required"], sprite: sprite("weavile"), spritePage: spritePage("weavile"), maxTitles: 47, regularTitles: 46 },
-  { id: "mamoswine", name: "Mamoswine", number: "#0473", generation: 4, shadowBase: "Swinub", originGame: "XD", route: "Start with the Shadow Swinub from Pokémon XD and evolve the same line through Mamoswine.", tags: ["Gen IV final", "Evolution required"], sprite: sprite("mamoswine"), spritePage: spritePage("mamoswine"), maxTitles: 47, regularTitles: 46 },
-  { id: "gardevoir", name: "Gardevoir", number: "#0282", generation: 3, shadowBase: "Ralts", originGame: "XD", route: "Start with the Shadow Ralts from Pokémon XD and evolve that same individual into Gardevoir.", tags: ["Evolution required"], sprite: sprite("gardevoir"), spritePage: spritePage("gardevoir"), maxTitles: 47, regularTitles: 46 },
-  { id: "gallade", name: "Gallade", number: "#0475", generation: 4, shadowBase: "Ralts ♂", originGame: "XD", route: "Start with a male Shadow Ralts from Pokémon XD, evolve it into Kirlia, then into Gallade.", tags: ["Gen IV final", "Male Ralts"], sprite: sprite("gallade"), spritePage: spritePage("gallade"), maxTitles: 47, regularTitles: 46 },
-  { id: "glalie", name: "Glalie", number: "#0362", generation: 3, shadowBase: "Snorunt", originGame: "XD", route: "Start with the Shadow Snorunt from Pokémon XD and evolve that same individual into Glalie.", tags: ["Evolution required"], sprite: sprite("glalie"), spritePage: spritePage("glalie"), maxTitles: 47, regularTitles: 46 },
-  { id: "froslass", name: "Froslass", number: "#0478", generation: 4, shadowBase: "Snorunt ♀", originGame: "XD", route: "Start with a female Shadow Snorunt from Pokémon XD and evolve that same individual into Froslass.", tags: ["Gen IV final", "Female Snorunt"], sprite: sprite("froslass"), spritePage: spritePage("froslass"), maxTitles: 47, regularTitles: 46 },
+  makeCandidate({ id: "heracross", name: "Heracross", number: "#0214", generation: 2, shadowBase: "Heracross", originGame: "Colosseum", route: "Catch Heracross directly as a Shadow Pokémon; no evolution is required for this final form.", tags: ["47-title ceiling", "Direct route"] }),
+  makeCandidate({ id: "snorlax", name: "Snorlax", number: "#0143", generation: 1, shadowBase: "Snorlax", originGame: "XD", route: "Catch Snorlax directly as a Shadow Pokémon in Pokémon XD: Gale of Darkness.", tags: ["47-title ceiling", "Direct route"] }),
+  makeCandidate({ id: "ninetales", name: "Ninetales", number: "#0038", generation: 1, shadowBase: "Vulpix", originGame: "XD", route: "Start with the Shadow Vulpix from Pokémon XD and evolve that same individual.", tags: ["47-title ceiling", "Evolution required"] }),
+  makeCandidate({ id: "scizor", name: "Scizor", number: "#0212", generation: 2, shadowBase: "Scyther", originGame: "XD", route: "Start with the Shadow Scyther from Pokémon XD and evolve that same individual into Scizor.", tags: ["47-title ceiling", "Trade evolution"] }),
+  makeCandidate({ id: "rhyperior", name: "Rhyperior", number: "#0464", generation: 4, shadowBase: "Rhydon", originGame: "XD", route: "Start with the Shadow Rhydon from Pokémon XD and evolve that same individual after it reaches Generation IV.", tags: ["47-title ceiling", "Trade evolution"] }),
+  makeCandidate({ id: "weavile", name: "Weavile", number: "#0461", generation: 4, shadowBase: "Sneasel", originGame: "Colosseum", route: "Start with the Shadow Sneasel from Pokémon Colosseum and evolve that same individual in Generation IV or later.", tags: ["47-title ceiling", "Evolution required"] }),
+  makeCandidate({ id: "mamoswine", name: "Mamoswine", number: "#0473", generation: 4, shadowBase: "Swinub", originGame: "XD", route: "Start with the Shadow Swinub from Pokémon XD and evolve the same line through Mamoswine.", tags: ["47-title ceiling", "Evolution required"] }),
+  makeCandidate({ id: "gardevoir", name: "Gardevoir", number: "#0282", generation: 3, shadowBase: "Ralts", originGame: "XD", route: "Start with the Shadow Ralts from Pokémon XD and evolve that same individual into Gardevoir.", tags: ["47-title ceiling", "Evolution required"] }),
+  makeCandidate({ id: "gallade", name: "Gallade", number: "#0475", generation: 4, shadowBase: "Ralts ♂", originGame: "XD", route: "Start with a male Shadow Ralts from Pokémon XD, evolve it into Kirlia, then into Gallade.", tags: ["47-title ceiling", "Male Ralts"] }),
+  makeCandidate({ id: "glalie", name: "Glalie", number: "#0362", generation: 3, shadowBase: "Snorunt", originGame: "XD", route: "Start with the Shadow Snorunt from Pokémon XD and evolve that same individual into Glalie.", tags: ["47-title ceiling", "Evolution required"] }),
+  makeCandidate({ id: "froslass", name: "Froslass", number: "#0478", generation: 4, shadowBase: "Snorunt ♀", originGame: "XD", route: "Start with a female Shadow Snorunt from Pokémon XD and evolve that same individual into Froslass.", tags: ["47-title ceiling", "Female Snorunt"] }),
+
+  makeCandidate({ id: "altaria", name: "Altaria", number: "#0334", generation: 3, shadowBase: "Altaria", originGame: "XD", route: "Catch Altaria directly as a Shadow Pokémon in Pokémon XD.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Altaria")] }),
+  makeCandidate({ id: "blissey", name: "Blissey", number: "#0242", generation: 2, shadowBase: "Chansey", originGame: "XD", route: "Start with the Shadow Chansey from Pokémon XD and evolve that same individual into Blissey.", tags: ["46 titles", "Current roster gap"], gaps: [noChampions("Blissey")] }),
+  makeCandidate({ id: "dragonite", name: "Dragonite", number: "#0149", generation: 1, shadowBase: "Dragonite", originGame: "XD", route: "Catch Dragonite directly as the final Shadow Pokémon in Pokémon XD.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Dragonite")] }),
+  makeCandidate({ id: "electivire", name: "Electivire", number: "#0466", generation: 4, shadowBase: "Electabuzz", originGame: "XD", route: "Start with the Shadow Electabuzz from Pokémon XD and evolve it after reaching Generation IV.", tags: ["46 titles", "Current roster gap"], gaps: [noChampions("Electivire")] }),
+  makeCandidate({ id: "gliscor", name: "Gliscor", number: "#0472", generation: 4, shadowBase: "Gligar", originGame: "Colosseum", route: "Start with the Shadow Gligar from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["46 titles", "Missing Galar"], gaps: [noGalar("Gliscor")] }),
+  makeCandidate({ id: "magmortar", name: "Magmortar", number: "#0467", generation: 4, shadowBase: "Magmar", originGame: "XD", route: "Start with the Shadow Magmar from Pokémon XD and evolve it after reaching Generation IV.", tags: ["46 titles", "Current roster gap"], gaps: [noChampions("Magmortar")] }),
+  makeCandidate({ id: "metagross", name: "Metagross", number: "#0376", generation: 3, shadowBase: "Metagross", originGame: "Colosseum", route: "Catch Metagross directly as a Shadow Pokémon in Pokémon Colosseum.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Metagross")] }),
+  makeCandidate({ id: "qwilfish", name: "Qwilfish", number: "#0211", generation: 2, shadowBase: "Qwilfish", originGame: "Colosseum", route: "Catch the Johtonian Qwilfish directly as a Shadow Pokémon in Pokémon Colosseum.", tags: ["46 titles", "Johtonian form"], gaps: [noHisui("Qwilfish")] }),
+  makeCandidate({ id: "sableye", name: "Sableye", number: "#0302", generation: 3, shadowBase: "Sableye", originGame: "XD", route: "Catch Sableye directly as a Shadow Pokémon in Pokémon XD.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Sableye")] }),
+  makeCandidate({ id: "salamence", name: "Salamence", number: "#0373", generation: 3, shadowBase: "Salamence", originGame: "XD", route: "Catch the level 50 Shadow Salamence from Cipher Admin Eldes on Citadark Isle.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Salamence")] }),
+  makeCandidate({ id: "skarmory", name: "Skarmory", number: "#0227", generation: 2, shadowBase: "Skarmory", originGame: "Colosseum", route: "Catch Skarmory directly as a Shadow Pokémon in Pokémon Colosseum.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Skarmory")] }),
+  makeCandidate({ id: "tyranitar", name: "Tyranitar", number: "#0248", generation: 2, shadowBase: "Tyranitar", originGame: "Colosseum", route: "Catch the level 55 Tyranitar directly as Pokémon Colosseum's final Shadow Pokémon.", tags: ["46 titles", "Missing Hisui"], gaps: [noHisui("Tyranitar")] }),
+
+  makeCandidate({ id: "ambipom", name: "Ambipom", number: "#0424", generation: 4, shadowBase: "Aipom", originGame: "Colosseum", route: "Start with the Shadow Aipom from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Ambipom"), noChampions("Ambipom")] }),
+  makeCandidate({ id: "ampharos", name: "Ampharos", number: "#0181", generation: 2, shadowBase: "Flaaffy", originGame: "Colosseum", route: "Start with the Shadow Flaaffy from Pokémon Colosseum and evolve that same individual into Ampharos.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Ampharos"), noHisui("Ampharos")] }),
+  makeCandidate({ id: "flygon", name: "Flygon", number: "#0330", generation: 3, shadowBase: "Vibrava", originGame: "Colosseum", route: "Start with the Shadow Vibrava from Pokémon Colosseum and evolve that same individual into Flygon.", tags: ["45 titles", "Two later-game gaps"], gaps: [noHisui("Flygon"), noChampions("Flygon")] }),
+  makeCandidate({ id: "honchkrow", name: "Honchkrow", number: "#0430", generation: 4, shadowBase: "Murkrow", originGame: "Colosseum", route: "Start with the Shadow Murkrow from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Honchkrow"), noChampions("Honchkrow")] }),
+  makeCandidate({ id: "houndoom", name: "Houndoom", number: "#0229", generation: 2, shadowBase: "Houndoom", originGame: "Colosseum", route: "Catch Houndoom directly as a Shadow Pokémon in Pokémon Colosseum.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Houndoom"), noHisui("Houndoom")] }),
+  makeCandidate({ id: "medicham", name: "Medicham", number: "#0308", generation: 3, shadowBase: "Meditite", originGame: "Colosseum", route: "Start with the Shadow Meditite from Pokémon Colosseum and evolve that same individual into Medicham.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Medicham"), noHisui("Medicham")] }),
+  makeCandidate({ id: "mismagius", name: "Mismagius", number: "#0429", generation: 4, shadowBase: "Misdreavus", originGame: "Colosseum", route: "Start with the Shadow Misdreavus from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Mismagius"), noChampions("Mismagius")] }),
+  makeCandidate({ id: "yanmega", name: "Yanmega", number: "#0469", generation: 4, shadowBase: "Yanma", originGame: "Colosseum", route: "Start with the Shadow Yanma from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Yanmega"), noChampions("Yanmega")] }),
+];
+
+export const PRE_SWITCH_TITLE_STEPS = TITLE_STEPS.filter(
+  (step) => step.phase !== "switch" && step.phase !== "champions",
+);
+
+export function titleStepsFor(candidate: Candidate) {
+  const unavailable = new Set(candidate.gaps.map((gap) => gap.titleId));
+  return TITLE_STEPS.filter((step) => !unavailable.has(step.id));
+}
+
+export const REDDIT_CALLOUTS: RedditCallout[] = [
+  {
+    label: "VIRTUAL CONSOLE",
+    title: "Game Boy provenance",
+    summary: "The post counts 275 species and later evolutions that can carry the Game Boy origin mark and the “Good Old Days” description from the 3DS Virtual Console route.",
+    items: ["Transferred VC Pokémon normally receive their Hidden Ability", "Crystal contains the legal in-game Shiny Celebi hunt", "VC Pokémon do not add Ribbon titles"],
+    note: "The post labels glitch-obtained VC Mew as illegal; it is not treated as a normal collection route here.",
+    source: SOURCES.reddit,
+  },
+  {
+    label: "GENERATION III",
+    title: "Rare hunts with historical access",
+    summary: "The masterpost highlights several Gen III specimens whose provenance cannot be recreated through a modern Switch playthrough.",
+    items: ["Faraway Island Mew in Japanese Emerald", "Birth Island Deoxys in FRLG or non-Japanese Emerald", "WISHMKR or Pokémon Channel Jirachi"],
+    note: "Event-island hunts require the relevant historical event access; distinguish preserved distribution methods from ordinary in-game availability.",
+    source: SOURCES.reddit,
+  },
+  {
+    label: "ORRE / GAMECUBE",
+    title: "Shadow hunts and Mt. Battle prizes",
+    summary: "Colosseum and XD provide the Shadow provenance used by every ranked route in this tracker, plus several separate collector goals.",
+    items: ["Colosseum Shadow Pokémon can be Shiny", "Mt. Battle Ho-Oh after purifying the regular Shadow set", "XD Johto starters with Frenzy Plant, Blast Burn, or Hydro Cannon"],
+    note: "Japanese Colosseum e-Reader cards add special Shadow Togepi, Mareep, and Scizor encounters.",
+    source: SOURCES.reddit,
+  },
+  {
+    label: "GENERATION IV + WII",
+    title: "One-off legacy specimens",
+    summary: "The post calls out several distinctive Gen IV and Wii routes worth completing independently from a Ribbon Master.",
+    items: ["Ranger Egg Manaphy's trade-before-hatch Shiny hunt", "Hayley's Phione and Mew from My Pokémon Ranch", "Sinjoh Ruins level-1 Dialga, Palkia, or Giratina", "PKTOPIA Pikachu, Electivire, and Magmortar"],
+    source: SOURCES.reddit,
+  },
+  {
+    label: "DS COLLECTIONS",
+    title: "Named trades and linked-game sets",
+    summary: "These collections preserve an original Trainer, game linkage, or acquisition method rather than adding a unique title.",
+    items: ["HGSS trades: Hornlette, Volty, Iron, and Rusty", "N's Pokémon from B2W2 Memory Link", "Yancy and Curtis Hidden Ability trades", "Dream Radar legendaries unlocked with DS cartridges"],
+    source: SOURCES.reddit,
+  },
+  {
+    label: "GENERATION VI–VII",
+    title: "3DS-only gifts and forms",
+    summary: "Later Bank-era highlights include demo, QR, and special-distribution Pokémon whose exact provenance is tied to the 3DS games.",
+    items: ["ORAS demo Glalie or Steelix", "SM demo Battle Bond Greninja", "QR Magearna and Partner Cap Pikachu", "Shiny Type: Null and Poipole hunts", "Mantine Surf Pikachu"],
+    source: SOURCES.reddit,
+  },
+  {
+    label: "SIMPLIFIED WATCHLIST",
+    title: "Six species or forms flagged by the post",
+    summary: "In its current simplified list, the post names six targets that are not obtainable from Switch games themselves and therefore depend on transfer routes or Pokémon GO caveats.",
+    items: ["Spinda", "Partner Cap Pikachu", "Poké Ball Pattern Vivillon", "Ash-Greninja", "Deoxys", "Victini"],
+    note: "This is a dated summary from the post, updated August 20, 2026—not a claim that every target is wholly unavailable through Pokémon GO or past events.",
+    source: SOURCES.reddit,
+  },
 ];
 
 export const SPECIES_UNION_LEADERS = ["Magneton", "Magnezone", "Magmar", "Magmortar"];

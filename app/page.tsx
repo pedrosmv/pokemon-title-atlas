@@ -33,9 +33,12 @@ import {
 import {
   CANDIDATES,
   PHASES,
+  PRE_SWITCH_TITLE_STEPS,
+  REDDIT_CALLOUTS,
   SOURCES,
   SPECIES_UNION_LEADERS,
   TITLE_STEPS,
+  titleStepsFor,
   type PhaseId,
 } from "./pokemon-data";
 
@@ -80,6 +83,7 @@ export default function Home() {
   const [generation, setGeneration] = useState("all");
   const [phase, setPhase] = useState<"all" | PhaseId>("all");
   const [bankOnly, setBankOnly] = useState(false);
+  const [preSwitchOnly, setPreSwitchOnly] = useState(false);
   const [onlyPending, setOnlyPending] = useState(false);
   const [completed, setCompleted] = useState<ProgressState>({});
   const [ready, setReady] = useState(false);
@@ -152,8 +156,9 @@ export default function Home() {
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       execute(input) {
         const value = input as { pokemonId?: string; titleId?: string; completed?: boolean };
-        if (!CANDIDATES.some((item) => item.id === value.pokemonId)) throw new Error("Invalid Pokémon.");
-        if (!TITLE_STEPS.some((item) => item.id === value.titleId)) throw new Error("Invalid title.");
+        const candidate = CANDIDATES.find((item) => item.id === value.pokemonId);
+        if (!candidate) throw new Error("Invalid Pokémon.");
+        if (!titleStepsFor(candidate).some((item) => item.id === value.titleId)) throw new Error("That title is not available for this route.");
         const key = progressKey(value.pokemonId!, value.titleId!);
         setCompleted((current) => ({ ...current, [key]: Boolean(value.completed) }));
         return { pokemonId: value.pokemonId, titleId: value.titleId, completed: Boolean(value.completed) };
@@ -176,8 +181,16 @@ export default function Home() {
         const candidate = CANDIDATES.find((item) => item.id === pokemonId);
         if (!candidate) throw new Error("Pokémon not found.");
         const stored = readStoredProgress();
-        const completedIds = TITLE_STEPS.filter((item) => stored[progressKey(candidate.id, item.id)]).map((item) => item.id);
-        return { pokemonId: candidate.id, name: candidate.name, completed: completedIds.length, total: TITLE_STEPS.length, completedIds };
+        const eligibleSteps = titleStepsFor(candidate);
+        const completedIds = eligibleSteps.filter((item) => stored[progressKey(candidate.id, item.id)]).map((item) => item.id);
+        return {
+          pokemonId: candidate.id,
+          name: candidate.name,
+          completed: completedIds.length,
+          total: eligibleSteps.length,
+          preSwitchTotal: eligibleSteps.filter((item) => item.phase !== "switch" && item.phase !== "champions").length,
+          completedIds,
+        };
       },
     });
 
@@ -185,6 +198,8 @@ export default function Home() {
   }, []);
 
   const selected = CANDIDATES.find((item) => item.id === selectedId) ?? CANDIDATES[0];
+  const selectedTitles = titleStepsFor(selected);
+  const selectedPreSwitchTitles = selectedTitles.filter((item) => item.phase !== "switch" && item.phase !== "champions");
   const filteredCandidates = useMemo(
     () =>
       CANDIDATES.filter((item) => {
@@ -195,14 +210,16 @@ export default function Home() {
       }),
     [generation, query],
   );
-  const visibleTitles = TITLE_STEPS.filter((item) => {
+  const visibleTitles = selectedTitles.filter((item) => {
     if (phase !== "all" && item.phase !== phase) return false;
+    if (preSwitchOnly && (item.phase === "switch" || item.phase === "champions")) return false;
     if (bankOnly && !item.bankCritical) return false;
     if (onlyPending && completed[progressKey(selected.id, item.id)]) return false;
     return true;
   });
-  const done = TITLE_STEPS.filter((item) => completed[progressKey(selected.id, item.id)]).length;
-  const percent = Math.round((done / TITLE_STEPS.length) * 100);
+  const done = selectedTitles.filter((item) => completed[progressKey(selected.id, item.id)]).length;
+  const preSwitchDone = selectedPreSwitchTitles.filter((item) => completed[progressKey(selected.id, item.id)]).length;
+  const percent = Math.round((done / selectedTitles.length) * 100);
   const bankCount = TITLE_STEPS.filter((item) => item.bankCritical).length;
 
   function toggle(titleId: string) {
@@ -213,7 +230,7 @@ export default function Home() {
   function clearSelectedProgress() {
     setCompleted((current) => {
       const next = { ...current };
-      TITLE_STEPS.forEach((item) => delete next[progressKey(selected.id, item.id)]);
+      selectedTitles.forEach((item) => delete next[progressKey(selected.id, item.id)]);
       return next;
     });
   }
@@ -239,26 +256,26 @@ export default function Home() {
         <div className="intro-row">
           <div className="intro-copy-block">
             <p className="eyebrow">RIBBON MASTER PLANNER</p>
-            <h1>Eleven finalists share the documented ceiling.</h1>
-            <p className="intro-copy">Choose a favorite, follow the route in order, and check off every title. The ranking uses only combinations supported by the cited references.</p>
+            <h1>Compare {CANDIDATES.length} audited legacy routes.</h1>
+            <p className="intro-copy">Choose a favorite, follow the route in order, and check off every title. The list keeps the 47-title ceiling, then adds realistic near-max routes with every documented gap called out.</p>
           </div>
           <div className="headline-score">
-            <span>Reproducible ceiling*</span>
+            <span>Highest audited ceiling*</span>
             <strong>47</strong>
             <small>42 Ribbon titles · up to 4 Marks · 1 Champions title</small>
           </div>
         </div>
 
         <div className="method-strip">
-          <div><BadgeCheck aria-hidden="true" /><span><strong>46</strong> without requiring Scale 0 or 255</span></div>
-          <div><AlertTriangle aria-hidden="true" /><span><strong>{bankCount}</strong> titles require the Bank-era route</span></div>
+          <div><BadgeCheck aria-hidden="true" /><span><strong>{PRE_SWITCH_TITLE_STEPS.length}</strong> pre-Switch title slots in a complete Shadow route</span></div>
+          <div><AlertTriangle aria-hidden="true" /><span><strong>{bankCount}</strong> titles are flagged Bank-critical (not the whole pre-Switch route)</span></div>
           <div><Info aria-hidden="true" /><span>*Derived count; excludes event distributions and historical tournament specimens that cannot be audited by individual.</span></div>
         </div>
 
         <div className="workspace">
           <aside className="candidate-panel" aria-label="Candidate Pokémon">
             <div className="panel-heading">
-              <div><span className="step-label">01 · CHOOSE</span><h2>Top candidates</h2></div>
+              <div><span className="step-label">01 · CHOOSE</span><h2>Ranked routes</h2></div>
               <span className="count-badge">{filteredCandidates.length}</span>
             </div>
             <div className="candidate-filters">
@@ -275,7 +292,8 @@ export default function Home() {
 
             <div className="candidate-list">
               {filteredCandidates.map((item) => {
-                const itemDone = TITLE_STEPS.filter((title) => completed[progressKey(item.id, title.id)]).length;
+                const itemTitles = titleStepsFor(item);
+                const itemDone = itemTitles.filter((title) => completed[progressKey(item.id, title.id)]).length;
                 return (
                   <button className="candidate-card" data-active={item.id === selected.id} key={item.id} onClick={() => setSelectedId(item.id)} type="button">
                     <span className="sprite-frame"><Image alt={`${item.name} HeartGold and SoulSilver pixel-art sprite`} height={84} loading="lazy" src={item.sprite} unoptimized width={84} /></span>
@@ -284,7 +302,7 @@ export default function Home() {
                       <strong>{item.name}</strong>
                       <span>{item.shadowBase} · {item.originGame}</span>
                     </span>
-                    <span className="candidate-score"><strong>{item.maxTitles}</strong><small>maximum</small><span>{itemDone}/{TITLE_STEPS.length}</span></span>
+                    <span className="candidate-score"><strong>{item.maxTitles}</strong><small>max titles</small><span>{itemDone}/{itemTitles.length} tracked</span></span>
                     <ChevronRight className="candidate-arrow" aria-hidden="true" />
                   </button>
                 );
@@ -306,13 +324,30 @@ export default function Home() {
               </div>
               <div className="progress-card">
                 <div className="progress-ring" style={{ "--progress": `${percent * 3.6}deg` } as React.CSSProperties}><span>{percent}%</span></div>
-                <div><span>This journey</span><strong>{done} of {TITLE_STEPS.length} titles</strong><Progress aria-label={`${percent}% complete`} value={percent} /></div>
+                <div><span>This journey</span><strong>{done} of {selectedTitles.length} titles</strong><small>{preSwitchDone} / {selectedPreSwitchTitles.length} pre-Switch</small><Progress aria-label={`${percent}% complete`} value={percent} /></div>
               </div>
             </div>
+
+            {selected.gaps.length > 0 && (
+              <section className="gap-note" aria-label={`${selected.name} route gaps`}>
+                <AlertTriangle aria-hidden="true" />
+                <div>
+                  <strong>{selected.maxTitles}-title ceiling for this individual</strong>
+                  <p>This route is fully trackable, but the references document {selected.gaps.length} unavailable title{selected.gaps.length === 1 ? "" : "s"}:</p>
+                  <ul>
+                    {selected.gaps.map((gap) => {
+                      const step = TITLE_STEPS.find((item) => item.id === gap.titleId);
+                      return <li key={gap.titleId}><span>{step?.ribbon ?? gap.titleId}:</span> {gap.reason} <a href={gap.source} rel="noreferrer" target="_blank">Verify <ExternalLink aria-hidden="true" /></a></li>;
+                    })}
+                  </ul>
+                </div>
+              </section>
+            )}
 
             <div className="title-toolbar">
               <div className="journey-heading"><span className="step-label">03 · TRACK</span><h3>Title route</h3></div>
               <div className="toolbar-actions">
+                <label><Checkbox checked={preSwitchOnly} onCheckedChange={(value) => setPreSwitchOnly(Boolean(value))} />Pre-Switch only</label>
                 <label><Checkbox checked={bankOnly} onCheckedChange={(value) => setBankOnly(Boolean(value))} />Bank-critical only</label>
                 <label><Checkbox checked={onlyPending} onCheckedChange={(value) => setOnlyPending(Boolean(value))} />Pending only</label>
                 <Button className="reset-button" onClick={clearSelectedProgress} size="sm" variant="ghost">Clear</Button>
@@ -331,7 +366,7 @@ export default function Home() {
             <div className="title-list">
               {visibleTitles.map((item) => {
                 const checked = Boolean(completed[progressKey(selected.id, item.id)]);
-                const ordinal = TITLE_STEPS.findIndex((title) => title.id === item.id) + 1;
+                const ordinal = selectedTitles.findIndex((title) => title.id === item.id) + 1;
                 return (
                   <article className="title-step" data-complete={checked} key={item.id}>
                     <div className="timeline-marker">{checked ? <Check aria-hidden="true" /> : String(ordinal).padStart(2, "0")}</div>
@@ -362,11 +397,13 @@ export default function Home() {
             <details className="sources-panel">
               <summary>Method and sources</summary>
               <div>
-                <p>The 47-title ceiling is an auditable derivation: 42 compatible Ribbon titles, up to four addable Scarlet/Violet Marks—Itemfinder, Partner, Gourmand, and exactly one size Mark—plus one distinct Pokémon Champions title. Gamepad chips name actual games; pin chips name the facility or location.</p>
+                <p>The 47-title ceiling is an auditable derivation: 42 compatible Ribbon titles, up to four addable Scarlet/Violet Marks—Itemfinder, Partner, Gourmand, and exactly one size Mark—plus one distinct Pokémon Champions title. Gamepad chips name actual games; pin chips name the facility or location. The pre-Switch filter removes only HOME-era and Champions steps; the Bank chip marks the narrower set without a later-game reissue.</p>
                 <ul>
                   <li><a href={SOURCES.reddit} rel="noreferrer" target="_blank">Pokémon Bank exclusives masterpost</a></li>
                   <li><a href={SOURCES.ribbons} rel="noreferrer" target="_blank">Bulbapedia · List of Ribbons</a></li>
                   <li><a href={SOURCES.shadow} rel="noreferrer" target="_blank">Bulbapedia · List of Shadow Pokémon</a></li>
+                  <li><a href={SOURCES.originMarks} rel="noreferrer" target="_blank">Bulbapedia · Origin marks</a></li>
+                  <li><a href={SOURCES.homeChallenges} rel="noreferrer" target="_blank">Bulbapedia · Pokémon HOME Challenges</a></li>
                   <li><a href={SOURCES.championsTitles} rel="noreferrer" target="_blank">Serebii · Pokémon Champions titles</a></li>
                   <li><a href={SOURCES.championsRoster} rel="noreferrer" target="_blank">Serebii · Pokémon Champions roster</a></li>
                 </ul>
@@ -374,6 +411,26 @@ export default function Home() {
             </details>
           </section>
         </div>
+
+        <section className="reddit-callouts" aria-labelledby="reddit-callouts-title">
+          <div className="reddit-heading">
+            <div><span className="step-label">BANK MASTERPOST · COLLECTOR NOTES</span><h2 id="reddit-callouts-title">Callouts from the Reddit masterpost</h2></div>
+            <p>These are provenance and collection goals, not extra title slots. Open the original post for the full caveats and update history.</p>
+            <a href={SOURCES.reddit} rel="noreferrer" target="_blank">Open the full masterpost <ExternalLink aria-hidden="true" /></a>
+          </div>
+          <div className="reddit-callout-grid">
+            {REDDIT_CALLOUTS.map((callout) => (
+              <article className="reddit-card" key={callout.title}>
+                <span className="reddit-card-label">{callout.label}</span>
+                <h3>{callout.title}</h3>
+                <p>{callout.summary}</p>
+                <ul>{callout.items.map((item) => <li key={item}>{item}</li>)}</ul>
+                {callout.note && <p className="reddit-note"><Info aria-hidden="true" />{callout.note}</p>}
+                <a href={callout.source} rel="noreferrer" target="_blank">Source post <ExternalLink aria-hidden="true" /></a>
+              </article>
+            ))}
+          </div>
+        </section>
       </section>
     </main>
   );
