@@ -1,3 +1,6 @@
+import { LEGACY_SPECIES, type LegacySpecies } from "./legacy-species";
+import { GEN3_ROUTE_BASES, SHADOW_LINE_ORIGINS } from "./legacy-route-data";
+
 export type PhaseId = "orre" | "gba-ds" | "bank" | "alola" | "switch" | "champions";
 
 export type TitleStep = {
@@ -26,9 +29,11 @@ export type Candidate = {
   number: string;
   generation: 1 | 2 | 3 | 4;
   shadowBase: string;
-  originGame: "Colosseum" | "XD";
+  originGame: string;
   route: string;
   tags: string[];
+  scope: "complete" | "pre-switch";
+  auditNote?: string;
   sprite: string;
   spritePage: string;
   availabilitySource: string;
@@ -51,6 +56,7 @@ export const SOURCES = {
   ribbons: "https://bulbapedia.bulbagarden.net/wiki/List_of_Ribbons_in_the_games",
   marks: "https://bulbapedia.bulbagarden.net/wiki/Mark",
   shadow: "https://bulbapedia.bulbagarden.net/wiki/List_of_Shadow_Pok%C3%A9mon",
+  nationalDex: "https://bulbapedia.bulbagarden.net/wiki/List_of_Pok%C3%A9mon_by_index_number_in_Generation_IV",
   originMarks: "https://bulbapedia.bulbagarden.net/wiki/Origin_mark",
   homeChallenges: "https://bulbapedia.bulbagarden.net/wiki/Challenge_(HOME)",
   transfer: "https://bulbapedia.bulbagarden.net/wiki/Transfer",
@@ -499,9 +505,11 @@ type CandidateInput = {
   number: string;
   generation: 1 | 2 | 3 | 4;
   shadowBase: string;
-  originGame: "Colosseum" | "XD";
+  originGame: string;
   route: string;
   tags: string[];
+  scope?: "complete" | "pre-switch";
+  auditNote?: string;
   gaps?: CandidateGap[];
 };
 
@@ -523,20 +531,27 @@ const noChampions = (name: string): CandidateGap => ({
 
 const makeCandidate = (input: CandidateInput): Candidate => {
   const gaps = input.gaps ?? [];
-  const maxTitles = TITLE_STEPS.length - gaps.length;
+  const scope = input.scope ?? "complete";
+  const scopedSteps =
+    scope === "pre-switch"
+      ? TITLE_STEPS.filter((step) => step.phase !== "switch" && step.phase !== "champions")
+      : TITLE_STEPS;
+  const scopedIds = new Set(scopedSteps.map((step) => step.id));
+  const maxTitles = scopedSteps.length - gaps.filter((gap) => scopedIds.has(gap.titleId)).length;
   const sizeAlreadyUnavailable = gaps.some((gap) => gap.titleId === "size-extreme");
   return {
     ...input,
+    scope,
     gaps,
     sprite: sprite(input.id),
     spritePage: spritePage(input.id),
     availabilitySource: speciesPage(input.name),
     maxTitles,
-    regularTitles: maxTitles - (sizeAlreadyUnavailable ? 0 : 1),
+    regularTitles: scope === "complete" ? maxTitles - (sizeAlreadyUnavailable ? 0 : 1) : maxTitles,
   };
 };
 
-export const CANDIDATES: Candidate[] = [
+const AUDITED_CANDIDATES: Candidate[] = [
   makeCandidate({ id: "heracross", name: "Heracross", number: "#0214", generation: 2, shadowBase: "Heracross", originGame: "Colosseum", route: "Catch Heracross directly as a Shadow Pokémon; no evolution is required for this final form.", tags: ["47-title ceiling", "Direct route"] }),
   makeCandidate({ id: "snorlax", name: "Snorlax", number: "#0143", generation: 1, shadowBase: "Snorlax", originGame: "XD", route: "Catch Snorlax directly as a Shadow Pokémon in Pokémon XD: Gale of Darkness.", tags: ["47-title ceiling", "Direct route"] }),
   makeCandidate({ id: "ninetales", name: "Ninetales", number: "#0038", generation: 1, shadowBase: "Vulpix", originGame: "XD", route: "Start with the Shadow Vulpix from Pokémon XD and evolve that same individual.", tags: ["47-title ceiling", "Evolution required"] }),
@@ -572,13 +587,122 @@ export const CANDIDATES: Candidate[] = [
   makeCandidate({ id: "yanmega", name: "Yanmega", number: "#0469", generation: 4, shadowBase: "Yanma", originGame: "Colosseum", route: "Start with the Shadow Yanma from Pokémon Colosseum and evolve it after reaching Generation IV.", tags: ["45 titles", "Two later-game gaps"], gaps: [noGalar("Yanmega"), noChampions("Yanmega")] }),
 ];
 
+const SPRITE_SLUG_OVERRIDES: Readonly<Record<string, string>> = {
+  "Deoxys": "deoxys-normal",
+  "Giratina": "giratina-altered",
+  "Nidoran♀": "nidoran-f",
+  "Nidoran♂": "nidoran-m",
+  "Shaymin": "shaymin-land",
+  "Unown": "unown-a",
+  "Wormadam": "wormadam-plant",
+};
+
+const speciesId = (name: string) =>
+  name
+    .toLowerCase()
+    .replaceAll("♀", "-f")
+    .replaceAll("♂", "-m")
+    .replaceAll("é", "e")
+    .replaceAll("'", "")
+    .replaceAll(".", "")
+    .replaceAll(" ", "-");
+
+const spriteSlug = (name: string) => SPRITE_SLUG_OVERRIDES[name] ?? speciesId(name);
+
+const noNationalRibbon = (name: string): CandidateGap => ({
+  titleId: "national",
+  reason: name + " is not listed as a Shadow Pokémon in Colosseum or XD, so this individual cannot receive the National Ribbon.",
+  source: SOURCES.shadow,
+});
+
+const noGenerationThreeOrigin = (name: string, titleId: string, ribbon: string): CandidateGap => ({
+  titleId,
+  reason: name + " first exists as its own evolutionary line in Generation IV, so it cannot travel backward to earn the " + ribbon + ".",
+  source: speciesPage(name),
+});
+
+function makeLegacyCandidate(species: LegacySpecies): Candidate {
+  const id = speciesId(species.name);
+  const shadowLineOrigin = SHADOW_LINE_ORIGINS[species.name];
+  const generationThreeBase = GEN3_ROUTE_BASES[species.name];
+  const canStartInGenerationThree = species.generation <= 3 || Boolean(generationThreeBase);
+  const gaps: CandidateGap[] = [];
+
+  if (!shadowLineOrigin) gaps.push(noNationalRibbon(species.name));
+  if (!canStartInGenerationThree) {
+    gaps.push(
+      noGenerationThreeOrigin(species.name, "earth", "Earth Ribbon"),
+      noGenerationThreeOrigin(species.name, "champion", "Champion Ribbon"),
+      noGenerationThreeOrigin(species.name, "artist", "Artist Ribbon"),
+    );
+  }
+
+  let route: string;
+  let shadowBase: string;
+  let originGame: string;
+  if (shadowLineOrigin) {
+    route =
+      shadowLineOrigin.base === species.name
+        ? "Catch " + species.name + " directly as a Shadow Pokémon in Pokémon " + shadowLineOrigin.game + ", purify it, complete its pre-Switch Ribbon route, and transfer it forward through Pokémon Bank."
+        : "Start with the Shadow " + shadowLineOrigin.base + " from Pokémon " + shadowLineOrigin.game + ", purify it, earn the available legacy Ribbons, and evolve that same individual into " + species.name + ".";
+    shadowBase = "Shadow " + shadowLineOrigin.base;
+    originGame = shadowLineOrigin.game;
+  } else if (generationThreeBase) {
+    route = "Start with " + generationThreeBase + " in Generation III, earn the available legacy Ribbons, transfer it to Generation IV, and then evolve it into " + species.name + ".";
+    shadowBase = "Non-Shadow evolution route";
+    originGame = "Generation III";
+  } else if (species.generation <= 3) {
+    route = "Start with " + species.name + " in a Generation III game, complete its available pre-Switch Ribbon route, and transfer it forward through Pokémon Bank. It has no documented Shadow encounter, so the National Ribbon is unavailable.";
+    shadowBase = "No Shadow encounter";
+    originGame = "Generation III";
+  } else {
+    route = "Start with " + species.name + " in a Generation IV game, complete its available pre-Switch Ribbon route, and transfer it forward through Pokémon Bank. Generation III and Orre-only titles are unavailable.";
+    shadowBase = "Generation IV origin";
+    originGame = "Generation IV";
+  }
+
+  const candidate = makeCandidate({
+    id,
+    name: species.name,
+    number: "#" + String(species.number).padStart(4, "0"),
+    generation: species.generation,
+    shadowBase,
+    originGame,
+    route,
+    tags: [
+      "Full Gen I–IV roster",
+      shadowLineOrigin ? "Documented Shadow route" : "Non-Shadow route",
+    ],
+    scope: "pre-switch",
+    auditNote:
+      "This roster entry shows the documented pre-Switch route only. Later-game availability is not asserted until it is checked against the relevant game roster.",
+    gaps,
+  });
+
+  return {
+    ...candidate,
+    sprite: sprite(spriteSlug(species.name)),
+    spritePage: spritePage(speciesId(species.name)),
+  };
+}
+
+const auditedByName = new Map(AUDITED_CANDIDATES.map((candidate) => [candidate.name, candidate]));
+
+export const CANDIDATES: Candidate[] = LEGACY_SPECIES.map(
+  (species) => auditedByName.get(species.name) ?? makeLegacyCandidate(species),
+);
+
 export const PRE_SWITCH_TITLE_STEPS = TITLE_STEPS.filter(
   (step) => step.phase !== "switch" && step.phase !== "champions",
 );
 
 export function titleStepsFor(candidate: Candidate) {
   const unavailable = new Set(candidate.gaps.map((gap) => gap.titleId));
-  return TITLE_STEPS.filter((step) => !unavailable.has(step.id));
+  return TITLE_STEPS.filter(
+    (step) =>
+      !unavailable.has(step.id) &&
+      (candidate.scope === "complete" || (step.phase !== "switch" && step.phase !== "champions")),
+  );
 }
 
 export const REDDIT_CALLOUTS: RedditCallout[] = [

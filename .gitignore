@@ -17,6 +17,7 @@
 /.next/
 /.vinext/
 /out/
+/release/
 
 # misc
 .DS_Store
@@ -42,6 +43,7 @@ next-env.d.ts
 /tsconfig.tsbuildinfo
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
+/.openai/
 /.agents/
 /.codex/
 /outputs/

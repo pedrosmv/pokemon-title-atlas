@@ -43,14 +43,6 @@ import {
 } from "./pokemon-data";
 
 type ProgressState = Record<string, boolean>;
-type ModelTool = {
-  name: string;
-  title: string;
-  description: string;
-  inputSchema: object;
-  annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
-  execute: (input: unknown) => unknown;
-};
 
 const STORAGE_KEY = "pokemon-title-atlas-progress-v2";
 const SELECTED_KEY = "pokemon-title-atlas-selected-v2";
@@ -77,6 +69,14 @@ function readStoredProgress(): ProgressState {
   }
 }
 
+function readStoredSelected(): string | null {
+  try {
+    return window.localStorage.getItem(SELECTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export default function Home() {
   const [selectedId, setSelectedId] = useState(CANDIDATES[0].id);
   const [query, setQuery] = useState("");
@@ -92,7 +92,7 @@ export default function Home() {
   useEffect(() => {
     const loadStoredState = window.setTimeout(() => {
       setCompleted(readStoredProgress());
-      const storedSelected = window.localStorage.getItem(SELECTED_KEY);
+      const storedSelected = readStoredSelected();
       if (storedSelected && CANDIDATES.some((item) => item.id === storedSelected)) {
         setSelectedId(storedSelected);
       }
@@ -109,93 +109,6 @@ export default function Home() {
       window.localStorage.setItem(SELECTED_KEY, selectedId);
     } catch {}
   }, [completed, ready, selectedId]);
-
-  useEffect(() => {
-    const modelContext = (document as Document & {
-      modelContext?: { registerTool: (tool: ModelTool, options?: { signal?: AbortSignal }) => void | Promise<void> };
-    }).modelContext;
-    if (!modelContext?.registerTool) return;
-    const lifecycle = new AbortController();
-    const register = (tool: ModelTool) =>
-      Promise.resolve(modelContext.registerTool(tool, { signal: lifecycle.signal })).catch(() => undefined);
-
-    void register({
-      name: "select_pokemon_route",
-      title: "Select Pokémon route",
-      description: "Selects one of the verified candidates and displays its route.",
-      inputSchema: {
-        type: "object",
-        properties: { pokemonId: { type: "string", enum: CANDIDATES.map((item) => item.id) } },
-        required: ["pokemonId"],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        const pokemonId = (input as { pokemonId?: string }).pokemonId;
-        const candidate = CANDIDATES.find((item) => item.id === pokemonId);
-        if (!candidate) throw new Error("Pokémon not found.");
-        setSelectedId(candidate.id);
-        return { selected: candidate.id, name: candidate.name };
-      },
-    });
-
-    void register({
-      name: "set_title_progress",
-      title: "Update title progress",
-      description: "Marks or unmarks one title in a Pokémon route.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          pokemonId: { type: "string", enum: CANDIDATES.map((item) => item.id) },
-          titleId: { type: "string", enum: TITLE_STEPS.map((item) => item.id) },
-          completed: { type: "boolean" },
-        },
-        required: ["pokemonId", "titleId", "completed"],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        const value = input as { pokemonId?: string; titleId?: string; completed?: boolean };
-        const candidate = CANDIDATES.find((item) => item.id === value.pokemonId);
-        if (!candidate) throw new Error("Invalid Pokémon.");
-        if (!titleStepsFor(candidate).some((item) => item.id === value.titleId)) throw new Error("That title is not available for this route.");
-        const key = progressKey(value.pokemonId!, value.titleId!);
-        setCompleted((current) => ({ ...current, [key]: Boolean(value.completed) }));
-        return { pokemonId: value.pokemonId, titleId: value.titleId, completed: Boolean(value.completed) };
-      },
-    });
-
-    void register({
-      name: "read_title_progress",
-      title: "Read title progress",
-      description: "Returns a summary of the saved progress for one Pokémon.",
-      inputSchema: {
-        type: "object",
-        properties: { pokemonId: { type: "string", enum: CANDIDATES.map((item) => item.id) } },
-        required: ["pokemonId"],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute(input) {
-        const pokemonId = (input as { pokemonId?: string }).pokemonId;
-        const candidate = CANDIDATES.find((item) => item.id === pokemonId);
-        if (!candidate) throw new Error("Pokémon not found.");
-        const stored = readStoredProgress();
-        const eligibleSteps = titleStepsFor(candidate);
-        const completedIds = eligibleSteps.filter((item) => stored[progressKey(candidate.id, item.id)]).map((item) => item.id);
-        return {
-          pokemonId: candidate.id,
-          name: candidate.name,
-          completed: completedIds.length,
-          total: eligibleSteps.length,
-          preSwitchTotal: eligibleSteps.filter((item) => item.phase !== "switch" && item.phase !== "champions").length,
-          completedIds,
-        };
-      },
-    });
-
-    return () => lifecycle.abort();
-  }, []);
 
   const selected = CANDIDATES.find((item) => item.id === selectedId) ?? CANDIDATES[0];
   const selectedTitles = titleStepsFor(selected);
@@ -256,8 +169,8 @@ export default function Home() {
         <div className="intro-row">
           <div className="intro-copy-block">
             <p className="eyebrow">RIBBON MASTER PLANNER</p>
-            <h1>Compare {CANDIDATES.length} audited legacy routes.</h1>
-            <p className="intro-copy">Choose a favorite, follow the route in order, and check off every title. The list keeps the 47-title ceiling, then adds realistic near-max routes with every documented gap called out.</p>
+            <h1>Browse all {CANDIDATES.length} Pokémon from Generations I–IV.</h1>
+            <p className="intro-copy">Search any Pokémon yourself, compare its documented pre-Switch route, and check off every obtainable title. Fully audited routes also retain their verified Switch and Champions steps.</p>
           </div>
           <div className="headline-score">
             <span>Highest audited ceiling*</span>
@@ -275,7 +188,7 @@ export default function Home() {
         <div className="workspace">
           <aside className="candidate-panel" aria-label="Candidate Pokémon">
             <div className="panel-heading">
-              <div><span className="step-label">01 · CHOOSE</span><h2>Ranked routes</h2></div>
+              <div><span className="step-label">01 · CHOOSE</span><h2>Pokémon roster</h2></div>
               <span className="count-badge">{filteredCandidates.length}</span>
             </div>
             <div className="candidate-filters">
@@ -302,7 +215,7 @@ export default function Home() {
                       <strong>{item.name}</strong>
                       <span>{item.shadowBase} · {item.originGame}</span>
                     </span>
-                    <span className="candidate-score"><strong>{item.maxTitles}</strong><small>max titles</small><span>{itemDone}/{itemTitles.length} tracked</span></span>
+                    <span className="candidate-score"><strong>{item.maxTitles}</strong><small>{item.scope === "pre-switch" ? "pre-Switch titles" : "max titles"}</small><span>{itemDone}/{itemTitles.length} tracked</span></span>
                     <ChevronRight className="candidate-arrow" aria-hidden="true" />
                   </button>
                 );
@@ -328,11 +241,18 @@ export default function Home() {
               </div>
             </div>
 
+            {selected.auditNote && (
+              <section className="scope-note" aria-label={selected.name + " audit scope"}>
+                <Info aria-hidden="true" />
+                <div><strong>Pre-Switch route shown</strong><p>{selected.auditNote}</p></div>
+              </section>
+            )}
+
             {selected.gaps.length > 0 && (
               <section className="gap-note" aria-label={`${selected.name} route gaps`}>
                 <AlertTriangle aria-hidden="true" />
                 <div>
-                  <strong>{selected.maxTitles}-title ceiling for this individual</strong>
+                  <strong>{selected.maxTitles}-title {selected.scope === "pre-switch" ? "documented pre-Switch " : ""}ceiling for this individual</strong>
                   <p>This route is fully trackable, but the references document {selected.gaps.length} unavailable title{selected.gaps.length === 1 ? "" : "s"}:</p>
                   <ul>
                     {selected.gaps.map((gap) => {
@@ -397,9 +317,10 @@ export default function Home() {
             <details className="sources-panel">
               <summary>Method and sources</summary>
               <div>
-                <p>The 47-title ceiling is an auditable derivation: 42 compatible Ribbon titles, up to four addable Scarlet/Violet Marks—Itemfinder, Partner, Gourmand, and exactly one size Mark—plus one distinct Pokémon Champions title. Gamepad chips name actual games; pin chips name the facility or location. The pre-Switch filter removes only HOME-era and Champions steps; the Bank chip marks the narrower set without a later-game reissue.</p>
+                <p>The roster contains all 493 species documented in the Generation IV National Pokédex. Pre-Switch entries avoid asserting later-game availability until that species is checked against the relevant roster; the fully audited high-ceiling routes retain their verified Switch and Champions steps. Gamepad chips name actual games, while pin chips name the facility or location.</p>
                 <ul>
                   <li><a href={SOURCES.reddit} rel="noreferrer" target="_blank">Pokémon Bank exclusives masterpost</a></li>
+                  <li><a href={SOURCES.nationalDex} rel="noreferrer" target="_blank">Bulbapedia · Generation IV National Pokédex roster</a></li>
                   <li><a href={SOURCES.ribbons} rel="noreferrer" target="_blank">Bulbapedia · List of Ribbons</a></li>
                   <li><a href={SOURCES.shadow} rel="noreferrer" target="_blank">Bulbapedia · List of Shadow Pokémon</a></li>
                   <li><a href={SOURCES.originMarks} rel="noreferrer" target="_blank">Bulbapedia · Origin marks</a></li>
